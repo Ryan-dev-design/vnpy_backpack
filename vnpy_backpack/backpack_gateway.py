@@ -217,7 +217,7 @@ class BackpackRestApi(RestClient):
         self.connect_time = 0
 
         self.order_count = 0
-        self.order_prefix :str = ""
+        self.order_prefix :int = 0
         self.time_offset = 0
     def sign(self, request: Request) -> None:
         """Standard callback for signing a request"""
@@ -293,7 +293,7 @@ class BackpackRestApi(RestClient):
         self.proxy_host = proxy_host
         self.server = server
 
-        self.order_prefix = '1'+datetime.now().strftime("%d%H%M%S")
+        self.order_prefix = int('1'+datetime.now().strftime("%d%H%M"))
         
 
         self.init(REST_HOST, proxy_host, proxy_port)
@@ -366,7 +366,7 @@ class BackpackRestApi(RestClient):
         """Send a new order """
         # Generate new order id
         self.order_count += 1
-        orderid: str = self.order_prefix + str(self.order_count)
+        orderid: str = str(self.order_prefix + self.order_count)
 
         # Push a submitting order event
         order: OrderData = req.create_order_data(
@@ -393,19 +393,19 @@ class BackpackRestApi(RestClient):
 
         if req.type == OrderType.LIMIT:
             params["timeInForce"] = "GTC"
-            params["price"] = "{:8f}".format(req.price)
+            params["price"] = "{:.8f}".format(req.price)
             params['orderType'] = "Limit"
-            params['postOnly'] = True
+            # params['postOnly'] = True
         
         elif req.type == OrderType.FOK:
             params['orderType'] = "Limit"
             params['timeInForce'] = "FOK"
-            params["price"] = "{:8f}".format(req.price)
+            params["price"] = "{:.8f}".format(req.price)
     
 
         elif req.type == OrderType.STOP:
             params['orderType'] = "Market"
-            params["triggerPrice"] = "{:8f}".format(req.price)
+            params["triggerPrice"] = "{:.8f}".format(req.price)
 
         elif req.type == OrderType.MARKET:
             params['orderType'] = "Market"
@@ -478,7 +478,7 @@ class BackpackRestApi(RestClient):
                     self.gateway.on_account(account)
             else:
                 position: PositionData = PositionData(
-                    symbol=account_id,
+                    symbol=account_id.lower()+"_usdc",
                     exchange=Exchange.BACKPACK,
                     direction=Direction.NET,
                     volume=float(account_data["available"]) + float(account_data["locked"]),
@@ -489,7 +489,7 @@ class BackpackRestApi(RestClient):
 
 
 
-        self.gateway.write_log("Account balance data is received")
+        # self.gateway.write_log("Account balance data is received")
 
     def on_query_order(self, data: dict, request: Request) -> None:
         """Callback of open orders query"""
@@ -773,9 +773,12 @@ class BackpackTradeWebsocketApi(WebsocketClient):
         )
 
         self.gateway.on_order(order)
+        # call rest api to update position
+        self.gateway.query_account()
+        self.gateway.query_position()
 
         # Round trade volume to meet step size
-        trade_volume = float(data["q"])-float(data["z"])
+        trade_volume = float(data["z"])
         contract: ContractData = symbol_contract_map.get(order.symbol, None)
         if contract:
             trade_volume = round_to(trade_volume, contract.min_volume)
@@ -796,8 +799,7 @@ class BackpackTradeWebsocketApi(WebsocketClient):
             offset=offset
         )
         self.gateway.on_trade(trade)
-        # call rest api to update position
-        self.gateway.query_position()
+        
 
 
     def on_position(self, packet: dict) -> None:
@@ -913,6 +915,7 @@ class BackpackDataWebsocketApi(WebsocketClient):
             tick.open_price = float(data['o'])
             tick.high_price = float(data['h'])
             tick.low_price = float(data['l'])
+            tick.pre_close = float(data['c'])
             tick.last_price = float(data['c'])
             tick.datetime = generate_datetime(data['E'])
             
